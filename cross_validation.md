@@ -35,30 +35,6 @@ library(mgcv)
     ## This is mgcv 1.8-33. For overview type 'help("mgcv-package")'.
 
 ``` r
-library(gam)
-```
-
-    ## Loading required package: splines
-
-    ## Loading required package: foreach
-
-    ## 
-    ## Attaching package: 'foreach'
-
-    ## The following objects are masked from 'package:purrr':
-    ## 
-    ##     accumulate, when
-
-    ## Loaded gam 1.20
-
-    ## 
-    ## Attaching package: 'gam'
-
-    ## The following objects are masked from 'package:mgcv':
-    ## 
-    ##     gam, gam.control, gam.fit, s
-
-``` r
 library(modelr)
 library(broom)
 ```
@@ -190,18 +166,169 @@ linear model on TESTING dataset
 rmse(linear_mod, test_df)
 ```
 
-    ## [1] 0.7160699
+    ## [1] 0.6687464
 
 ``` r
 rmse(smooth_mod, test_df)
 ```
 
-    ## [1] 0.2730743
+    ## [1] 0.2788097
 
 ``` r
 rmse(wiggly_mod, test_df)
 ```
 
-    ## [1] 0.3222362
+    ## [1] 0.3152495
 
 We want the lowest RMSE.
+
+## Cross validation using `modelr`
+
+Automates generation of testing and training df
+
+``` r
+cv_df = 
+  crossv_mc(nonlin_df, 100)
+```
+
+What is happening here…
+
+Resampling objects: draws from sample repeatedly in random way
+
+``` r
+cv_df %>% pull(train) %>% .[[1]] %>% as_tibble()
+```
+
+    ## # A tibble: 79 x 3
+    ##       id      x       y
+    ##    <int>  <dbl>   <dbl>
+    ##  1     1 0.551   0.360 
+    ##  2     2 0.804  -1.59  
+    ##  3     3 0.365   0.432 
+    ##  4     4 0.482   0.965 
+    ##  5     6 0.760  -1.47  
+    ##  6     7 0.523   0.0497
+    ##  7     8 0.284   0.944 
+    ##  8     9 0.378   0.949 
+    ##  9    10 0.904  -2.52  
+    ## 10    11 0.0332  0.578 
+    ## # … with 69 more rows
+
+``` r
+cv_df %>% pull(test) %>% .[[1]] %>% as_tibble()
+```
+
+    ## # A tibble: 21 x 3
+    ##       id      x       y
+    ##    <int>  <dbl>   <dbl>
+    ##  1     5 0.0175  0.0809
+    ##  2    12 0.240   1.21  
+    ##  3    18 0.771  -1.22  
+    ##  4    24 0.183   0.489 
+    ##  5    26 0.656  -0.202 
+    ##  6    28 0.470   1.11  
+    ##  7    32 0.708  -0.711 
+    ##  8    33 0.773  -1.15  
+    ##  9    34 0.469   0.711 
+    ## 10    41 0.288   1.25  
+    ## # … with 11 more rows
+
+Can convert each df back into its own tibble as above
+
+Let’s get list columns of df, not resample objects
+
+``` r
+cv_df = 
+  cv_df %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble))
+```
+
+Let’s try to fit models and get RMSEs for each of these.
+
+``` r
+cv_df = 
+  cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(y ~ x, data = .x)),
+    smooth_mod = map(.x = train, ~gam(y ~ s(x), data = .x)),
+    wiggly_mod = map(.x = train, ~gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))
+  ) %>% 
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_wiggly = map2_dbl(.x = wiggly_mod, .y = test, ~rmse(model = .x, data = .y))
+  )
+```
+
+What do these results say about model choices?
+
+``` r
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  )
+```
+
+    ## # A tibble: 300 x 2
+    ##    model   rmse
+    ##    <chr>  <dbl>
+    ##  1 linear 0.834
+    ##  2 smooth 0.241
+    ##  3 wiggly 0.253
+    ##  4 linear 0.702
+    ##  5 smooth 0.278
+    ##  6 wiggly 0.353
+    ##  7 linear 0.746
+    ##  8 smooth 0.263
+    ##  9 wiggly 0.311
+    ## 10 linear 0.727
+    ## # … with 290 more rows
+
+``` r
+##plot this
+
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-11-1.png" width="90%" />
+
+Cool\! Linear model does poorly. Among the 3 models, the smooth model
+does the best.
+
+Compute averages
+
+``` r
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  group_by(model) %>% 
+  summarize(avg_rmse = mean(rmse))
+```
+
+    ## `summarise()` ungrouping output (override with `.groups` argument)
+
+    ## # A tibble: 3 x 2
+    ##   model  avg_rmse
+    ##   <chr>     <dbl>
+    ## 1 linear    0.778
+    ## 2 smooth    0.296
+    ## 3 wiggly    0.352
