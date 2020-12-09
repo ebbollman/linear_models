@@ -1,0 +1,121 @@
+---
+title: "Cross Validation"
+output: github_document
+---
+
+```{r setup_and_data_visualization_preferences}
+library(tidyverse)
+library(patchwork)
+library(stringr)
+library(p8105.datasets)
+library(mgcv)
+library(gam)
+library(modelr)
+library(broom)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+What to get out of this:
+
+1) How to use prediction accuracy to compare models of varying degrees of complexity using cross-validation
+
+2) Need to build models of varying degrees of complexity using various tools. Less important to understand specific tools.
+
+## Simulate data
+
+Identify how to choose right model
+
+```{r}
+nonlin_df =
+  tibble(
+    id = 1:100,
+    x = runif(100, 0, 1),
+    y = 1 - 10 * (x - 0.3) ^ 2 + rnorm(100, 0, 0.3)
+  )
+```
+
+Look at data
+
+```{r}
+nonlin_df %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point()
+```
+
+## Cross validation -- by hand
+
+Get training and testing datasets
+
+```{r}
+train_df = sample_n(nonlin_df, size = 80)
+test_df = anti_join(nonlin_df, train_df, by = "id")
+```
+
+This creates two df's that do not overlap. Samples train 80/100, and then test for the remaining 20
+
+Fit three models.
+
+```{r}
+linear_mod = lm(y ~ x, data = train_df)
+smooth_mod = mgcv::gam(y ~ s(x), data = train_df)
+wiggly_mod = mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = train_df)
+```
+
+Can I see what I just did
+
+```{r}
+train_df %>% 
+  add_predictions(linear_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red")
+
+train_df %>% 
+  add_predictions(smooth_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red")
+
+train_df %>% 
+  add_predictions(wiggly_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red")
+
+train_df %>% 
+  gather_predictions(linear_mod, smooth_mod, wiggly_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red") + 
+  facet_grid(. ~ model)
+```
+
+Smooth model probably should do best.
+
+gather_predictions to look at multiple models at once
+
+Look at prediction accuracy: look at root mean square error using the linear model on TESTING dataset
+
+```{r}
+rmse(linear_mod, test_df)
+rmse(smooth_mod, test_df)
+rmse(wiggly_mod, test_df)
+```
+
+We want the lowest RMSE.
+
+
+
+
