@@ -204,3 +204,86 @@ cv_df %>%
   summarize(avg_rmse = mean(rmse))
 ```
 
+## Try on a real dataset
+
+```{r}
+child_growth_df = 
+  read_csv("./data/nepalese_children.csv") %>% 
+  mutate(
+    weight_cp = (weight > 7) * (weight - 7)
+  )
+```
+
+How well does weight predict arm circumference
+
+```{r}
+child_growth_df %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = 0.3)
+```
+
+Make a change point model, adding weight_cp above
+
+### Fit models I care about
+
+```{r}
+linear_mod = lm(armc ~ weight, data = child_growth_df)
+pwlin_mod = lm(armc ~ weight + weight_cp, data = child_growth_df)
+smooth_mod = gam(armc ~ s(weight), data = child_growth_df)
+```
+
+```{r}
+child_growth_df %>% 
+  gather_predictions(linear_mod, pwlin_mod, smooth_mod) %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = 0.3) + 
+  geom_line(aes(y = pred), color = "red") + 
+  facet_grid(. ~ model)
+```
+
+### Cross-validation 
+
+Try to understand how well each model fits
+
+```{r}
+cv_df = 
+  crossv_mc(child_growth_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+See if can fit model to the splits
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(armc ~ weight, data = .x)),
+    smooth_mod = map(.x = train, ~gam(armc ~ s(weight), data = .x)),
+    pwlin_mod = map(.x = train, ~gam(armc ~ weight + weight_cp, data = .x))
+  ) %>% 
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_pwlin = map2_dbl(.x = pwlin_mod, .y = test, ~rmse(model = .x, data = .y))
+  )
+```
+
+Violin plot of RMSEs
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+Consider picking the piecewise linear model (pwlin) bc there's clear improvement from linear to pwlin and not huge improvement to smooth model. Interpretation of piecewise linear model is more easily interpretable. 

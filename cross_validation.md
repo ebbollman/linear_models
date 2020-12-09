@@ -166,19 +166,19 @@ linear model on TESTING dataset
 rmse(linear_mod, test_df)
 ```
 
-    ## [1] 0.6687464
+    ## [1] 0.6756884
 
 ``` r
 rmse(smooth_mod, test_df)
 ```
 
-    ## [1] 0.2788097
+    ## [1] 0.3589506
 
 ``` r
 rmse(wiggly_mod, test_df)
 ```
 
-    ## [1] 0.3152495
+    ## [1] 0.4175184
 
 We want the lowest RMSE.
 
@@ -200,18 +200,18 @@ cv_df %>% pull(train) %>% .[[1]] %>% as_tibble()
 ```
 
     ## # A tibble: 79 x 3
-    ##       id      x       y
-    ##    <int>  <dbl>   <dbl>
-    ##  1     1 0.551   0.360 
-    ##  2     2 0.804  -1.59  
-    ##  3     3 0.365   0.432 
-    ##  4     4 0.482   0.965 
-    ##  5     6 0.760  -1.47  
-    ##  6     7 0.523   0.0497
-    ##  7     8 0.284   0.944 
-    ##  8     9 0.378   0.949 
-    ##  9    10 0.904  -2.52  
-    ## 10    11 0.0332  0.578 
+    ##       id     x      y
+    ##    <int> <dbl>  <dbl>
+    ##  1     1 0.586  0.416
+    ##  2     2 0.398  0.993
+    ##  3     3 0.938 -3.03 
+    ##  4     4 0.841 -2.04 
+    ##  5     5 0.371  1.20 
+    ##  6     7 0.908 -2.51 
+    ##  7     9 0.389  0.833
+    ##  8    10 0.461  0.872
+    ##  9    12 0.141  0.720
+    ## 10    13 0.304  0.689
     ## # … with 69 more rows
 
 ``` r
@@ -219,18 +219,18 @@ cv_df %>% pull(test) %>% .[[1]] %>% as_tibble()
 ```
 
     ## # A tibble: 21 x 3
-    ##       id      x       y
-    ##    <int>  <dbl>   <dbl>
-    ##  1     5 0.0175  0.0809
-    ##  2    12 0.240   1.21  
-    ##  3    18 0.771  -1.22  
-    ##  4    24 0.183   0.489 
-    ##  5    26 0.656  -0.202 
-    ##  6    28 0.470   1.11  
-    ##  7    32 0.708  -0.711 
-    ##  8    33 0.773  -1.15  
-    ##  9    34 0.469   0.711 
-    ## 10    41 0.288   1.25  
+    ##       id     x      y
+    ##    <int> <dbl>  <dbl>
+    ##  1     6 0.131  0.473
+    ##  2     8 0.265  1.38 
+    ##  3    11 0.521 -0.373
+    ##  4    15 0.678 -0.210
+    ##  5    28 0.531  1.16 
+    ##  6    29 0.672 -0.664
+    ##  7    42 0.322  0.699
+    ##  8    51 0.922 -2.51 
+    ##  9    52 0.357  0.593
+    ## 10    58 0.212  1.62 
     ## # … with 11 more rows
 
 Can convert each df back into its own tibble as above
@@ -277,16 +277,16 @@ cv_df %>%
     ## # A tibble: 300 x 2
     ##    model   rmse
     ##    <chr>  <dbl>
-    ##  1 linear 0.834
-    ##  2 smooth 0.241
-    ##  3 wiggly 0.253
-    ##  4 linear 0.702
-    ##  5 smooth 0.278
-    ##  6 wiggly 0.353
-    ##  7 linear 0.746
-    ##  8 smooth 0.263
-    ##  9 wiggly 0.311
-    ## 10 linear 0.727
+    ##  1 linear 0.722
+    ##  2 smooth 0.386
+    ##  3 wiggly 0.436
+    ##  4 linear 0.645
+    ##  5 smooth 0.299
+    ##  6 wiggly 0.404
+    ##  7 linear 0.772
+    ##  8 smooth 0.342
+    ##  9 wiggly 0.451
+    ## 10 linear 0.765
     ## # … with 290 more rows
 
 ``` r
@@ -329,6 +329,108 @@ cv_df %>%
     ## # A tibble: 3 x 2
     ##   model  avg_rmse
     ##   <chr>     <dbl>
-    ## 1 linear    0.778
-    ## 2 smooth    0.296
-    ## 3 wiggly    0.352
+    ## 1 linear    0.701
+    ## 2 smooth    0.319
+    ## 3 wiggly    0.401
+
+## Try on a real dataset
+
+``` r
+child_growth_df = 
+  read_csv("./data/nepalese_children.csv") %>% 
+  mutate(
+    weight_cp = (weight > 7) * (weight - 7)
+  )
+```
+
+    ## Parsed with column specification:
+    ## cols(
+    ##   age = col_double(),
+    ##   sex = col_double(),
+    ##   weight = col_double(),
+    ##   height = col_double(),
+    ##   armc = col_double()
+    ## )
+
+How well does weight predict arm circumference
+
+``` r
+child_growth_df %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = 0.3)
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-14-1.png" width="90%" />
+
+Make a change point model, adding weight\_cp above
+
+### Fit models I care about
+
+``` r
+linear_mod = lm(armc ~ weight, data = child_growth_df)
+pwlin_mod = lm(armc ~ weight + weight_cp, data = child_growth_df)
+smooth_mod = gam(armc ~ s(weight), data = child_growth_df)
+```
+
+``` r
+child_growth_df %>% 
+  gather_predictions(linear_mod, pwlin_mod, smooth_mod) %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = 0.3) + 
+  geom_line(aes(y = pred), color = "red") + 
+  facet_grid(. ~ model)
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-16-1.png" width="90%" />
+
+### Cross-validation
+
+Try to understand how well each model fits
+
+``` r
+cv_df = 
+  crossv_mc(child_growth_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+See if can fit model to the splits
+
+``` r
+cv_df = 
+  cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(armc ~ weight, data = .x)),
+    smooth_mod = map(.x = train, ~gam(armc ~ s(weight), data = .x)),
+    pwlin_mod = map(.x = train, ~gam(armc ~ weight + weight_cp, data = .x))
+  ) %>% 
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_pwlin = map2_dbl(.x = pwlin_mod, .y = test, ~rmse(model = .x, data = .y))
+  )
+```
+
+Violin plot of RMSEs
+
+``` r
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+<img src="cross_validation_files/figure-gfm/unnamed-chunk-19-1.png" width="90%" />
+
+Consider picking the piecewise linear model (pwlin) bc there’s clear
+improvement from linear to pwlin and not huge improvement to smooth
+model. Interpretation of piecewise linear model is more easily
+interpretable.
