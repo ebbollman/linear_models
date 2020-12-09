@@ -1,0 +1,103 @@
+---
+title: "Linear Models"
+date: "11/26/2020"
+output: github_document
+---
+
+```{r setup_and_data_visualization_preferences}
+library(tidyverse)
+library(patchwork)
+library(stringr)
+library(p8105.datasets)
+
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Data import and tidying
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood
+  ) %>% 
+  filter(borough != "Staten Island") %>% 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+## Fit a model
+
+Want to know how price of rental is related to stars and borough
+
+```{r}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price, color = borough)) + 
+  geom_point()
+```
+
+Want to fit a model to this
+
+```{r}
+price_fit = lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+Lets look at model results generically
+
+```{r in}
+price_fit
+
+#This gives a fair bit of info
+summary(price_fit)
+
+#This one give t statistic and p-value for each individual coefficient
+summary(price_fit)$coef
+```
+
+```{r include = FALSE}
+#These outputs do not seem useful
+coef(price_fit)
+fitted.values(price_fit)
+residuals(price_fit)
+```
+
+
+Tidy results of fit
+
+```{r}
+broom::glance(price_fit)
+
+broom::tidy(price_fit)
+```
+
+For every one-unit increase in stars, price of room increases by $32 keeping borough fixed.
+Implicitly ref group is Bronx (first alphabetical). Room in Manhattan is $90 more than in Bronx.
+
+Get test stat for each and p-value
+
+Queens is not statistically significant
+
+```{r}
+broom::tidy(price_fit) %>% 
+  select(-std.error, -statistic) %>% 
+  mutate(
+    term = str_replace(term, "borough", "Borough: ")
+  ) %>% 
+  knitr::kable()
+```
+
