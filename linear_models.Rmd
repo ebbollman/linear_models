@@ -129,3 +129,58 @@ broom::glance(price_fit)
 ```
 
 Now, Brooklyn is being compared to Manhattan, Bronx to Manhattan etc. This doesn't change model intrinsically, just changes what you see and how it works
+
+## Diagnostics
+
+```{r}
+modelr::add_residuals(nyc_airbnb, price_fit)
+```
+
+This looks like usual df, but shows that for each observation, e.g., the first room is $9.47 more than expected
+
+```{r}
+modelr::add_residuals(nyc_airbnb, price_fit) %>% 
+  ggplot(aes(x = borough, y = resid)) + 
+  geom_violin()
+```
+
+This is a distribution of residuals... shows some significnat outliers in the model
+
+```{r}
+nyc_airbnb %>% 
+  modelr::add_residuals(price_fit) %>% 
+  ggplot(aes(x = borough, y = resid)) + 
+  geom_violin() + 
+  ylim(-500, 1500)
+
+nyc_airbnb %>% 
+  modelr::add_residuals(price_fit) %>% 
+  ggplot(aes(x = stars, y = resid)) + 
+  geom_point() + 
+  facet_wrap(. ~borough)
+```
+
+There is a problem in that there are these big outliers in residual distribution, suggests that model may not be appropriate.
+
+Second plot shows that there are more outliers at higher star ratings (extremely high priced apartments) that limit how well the model works.
+
+## Hypothesis tests
+
+```{r}
+price_fit %>% 
+  broom::tidy()
+```
+
+This does t-test by default for each coefficient.
+
+What if we want to test the significance of `borough` all together... use F test (ANOVA)
+
+```{r}
+fit_null = lm(price ~ stars, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough, data = nyc_airbnb)
+
+anova(fit_null, fit_alt) %>% 
+  broom::tidy()
+```
+
+If do F-test first, and then do t-test after that then worry about multiple comparisons corrections being stats problem
