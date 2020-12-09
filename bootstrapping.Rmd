@@ -120,3 +120,125 @@ boot_sample(sim_df_nonconst) %>%
 ```
 
 Every time we run this, will be slightly different.
+
+## Many samples and analyses
+
+```{r}
+boot_straps = 
+  tibble(
+    strap_number = 1:1000,
+    strap_sample = rerun(1000, boot_sample(sim_df_nonconst))
+  )
+
+boot_straps %>% pull(strap_sample) %>% .[[1]]
+```
+
+
+Now can use same iterative analyses we used in other places!
+
+Fit regression to each boot strapped df and get some results
+
+```{r}
+boot_results =
+  boot_straps %>%
+  mutate(
+    models = map(.x = strap_sample, ~lm(y ~ x, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+  
+```
+
+This df has 1000 datasets, and for each dataset, fit linear regression and got intercept and slope for each.
+
+For each dataset, we don't care about std.error, statistic, p.value.
+
+We care about distribution of estimated intercept and slope. We *hope* that these distributions are similar to the standard error.
+
+What is actual std deviation of estimates under repeated sampling?
+
+```{r}
+boot_results %>% 
+  group_by(term) %>%
+  summarize(
+    mean_est = mean(estimate),
+    sd_est = sd(estimate)
+  )
+``` 
+
+We know linear regression will assume constant variance, and we know constant variance isn't the right assumption....
+
+So, we want to know what the *actual* uncertainty (standard error) is in the intercept and parameter. Not assuming constant (residual) variance here, looking for actual uncertainty in intercept and slope.
+
+If you compare bootstrap sd of intercept
+
+## Confidence intervals
+
+First, look at distributions of bootstrapped results
+
+```{r}
+boot_results %>% 
+  filter(term == "x") %>% 
+  ggplot(aes(x = estimate)) + 
+  geom_density()
+```
+
+HEY THIS IS COOL! Under repeated sampling, the actual distribution of the slope estimate in my sample does look like a normal distribution. This doesn't rely on any OLS assumptions.
+
+Construct bootstrap CI
+
+```{r}
+boot_results %>%
+  group_by(term) %>% 
+  summarize(
+    ci_lower = quantile(estimate, 0.025),
+    ci_upper = quantile(estimate, 0.975)
+  )
+```
+
+
+## Bootstrap using modelr
+
+Can we simplify anything...?
+
+```{r}
+sim_df_nonconst %>% 
+  modelr::bootstrap(1000)
+```
+ 
+The modelr package bootstrap function is just like manual function I wrote above.
+
+mgcv::gam package doesn't work well with this
+
+```{r}
+## Map a linear model for each of 1000 bootstrap samples
+sim_df_nonconst %>% 
+  modelr::bootstrap(1000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(y ~ x, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+
+## Calculate the mean of the bootstrap sample lm parameters
+sim_df_nonconst %>% 
+  modelr::bootstrap(1000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(y ~ x, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  group_by(term) %>% 
+  summarize(
+    mean_est = mean(estimate),
+    sd_est = sd(estimate)
+  )
+
+```
+
+We were able to get this pretty quickly! This is the actual mean and sd of the parameter estimate on parameter samples. The estimates and standard errors are also pretty close to what they should be if OLS fits.
+
+
