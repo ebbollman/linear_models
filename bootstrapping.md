@@ -415,3 +415,99 @@ We were able to get this pretty quickly\! This is the actual mean and sd
 of the parameter estimate on parameter samples. The estimates and
 standard errors are also pretty close to what they should be if OLS
 fits.
+
+## Revisit real data
+
+``` r
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood
+  ) %>% 
+  filter(borough != "Staten Island") %>% 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+Look at plot
+
+``` r
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price)) + 
+  geom_point()
+```
+
+    ## Warning: Removed 9962 rows containing missing values (geom_point).
+
+<img src="bootstrapping_files/figure-gfm/unnamed-chunk-16-1.png" width="90%" />
+
+THere is a relationship between stars and price, but… SO many outliers,
+there’s definitely non-constant variance. Clearly OLS assumptions don’t
+fit.
+
+``` r
+airbnb_boot_results = 
+  nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  drop_na(stars) %>% 
+  modelr::bootstrap(1000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(price ~ stars, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+
+airbnb_boot_results %>% 
+  group_by(term) %>% 
+  summarize(
+    mean_est = mean(estimate),
+    sd_est = sd(estimate)
+  )
+```
+
+    ## `summarise()` ungrouping output (override with `.groups` argument)
+
+    ## # A tibble: 2 x 3
+    ##   term        mean_est sd_est
+    ##   <chr>          <dbl>  <dbl>
+    ## 1 (Intercept)    -34.8  32.0 
+    ## 2 stars           43.4   6.48
+
+Compare this output to `lm`
+
+``` r
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  drop_na(stars) %>% 
+  lm(price ~ stars, data = .) %>% 
+  broom::tidy()
+```
+
+    ## # A tibble: 2 x 5
+    ##   term        estimate std.error statistic  p.value
+    ##   <chr>          <dbl>     <dbl>     <dbl>    <dbl>
+    ## 1 (Intercept)    -34.3     22.9      -1.50 1.35e- 1
+    ## 2 stars           43.3      4.78      9.07 1.39e-19
+
+LM assuming constant variance thinks the std.error of stars parameter is
+4.7, but the bootstrapped actual std.error estimate of stars is 6.4,
+which is what would expect with outliers that mean assumption of
+constant variance is not true.
+
+``` r
+airbnb_boot_results %>% 
+  filter(term == "stars") %>% 
+  ggplot(aes(x = estimate)) + 
+  geom_density()
+```
+
+<img src="bootstrapping_files/figure-gfm/unnamed-chunk-19-1.png" width="90%" />
+
+Hey, the estimates are not normal distribution\! Unlike above. This is
+real data. So bootstrapped model is really important here.
+
+Transformation on outcome is harder to interpret.

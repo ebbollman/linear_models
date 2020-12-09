@@ -241,4 +241,73 @@ sim_df_nonconst %>%
 
 We were able to get this pretty quickly! This is the actual mean and sd of the parameter estimate on parameter samples. The estimates and standard errors are also pretty close to what they should be if OLS fits.
 
+## Revisit real data
 
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood
+  ) %>% 
+  filter(borough != "Staten Island") %>% 
+  select(price, stars, borough, neighborhood, room_type)
+```
+
+Look at plot 
+
+```{r}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price)) + 
+  geom_point()
+```
+
+THere is a relationship between stars and price, but... SO many outliers, there's definitely non-constant variance. Clearly OLS assumptions don't fit.
+
+```{r}
+airbnb_boot_results = 
+  nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  drop_na(stars) %>% 
+  modelr::bootstrap(1000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(price ~ stars, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+
+airbnb_boot_results %>% 
+  group_by(term) %>% 
+  summarize(
+    mean_est = mean(estimate),
+    sd_est = sd(estimate)
+  )
+```
+
+
+Compare this output to `lm`
+
+```{r}
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  drop_na(stars) %>% 
+  lm(price ~ stars, data = .) %>% 
+  broom::tidy()
+```
+
+LM assuming constant variance thinks the std.error of stars parameter is 4.7, but the bootstrapped actual std.error estimate of stars is 6.4, which is what would expect with outliers that mean assumption of constant variance is not true.
+
+```{r}
+airbnb_boot_results %>% 
+  filter(term == "stars") %>% 
+  ggplot(aes(x = estimate)) + 
+  geom_density()
+```
+
+Hey, the estimates are not normal distribution! Unlike above. This is real data. So bootstrapped model is really important here.
+
+Transformation on outcome is harder to interpret.
