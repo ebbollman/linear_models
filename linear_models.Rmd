@@ -101,3 +101,31 @@ broom::tidy(price_fit) %>%
   knitr::kable()
 ```
 
+
+## Be in control of factors
+
+Character variables get converted to factor variables in R. Preserve text, but add structure of 1, 2, 3, 4, 5, etc... to it. R makes an assumption that it should be in alphabetical order, which then gets put into indicator variables. First one alphabetically will be reference group 
+
+Make ref category the most common one.
+
+```{r}
+nyc_airbnb =
+  nyc_airbnb %>% 
+  mutate(
+    borough = fct_infreq(borough),
+    room_type = fct_infreq(room_type)
+  )
+
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price, color = borough)) + 
+  geom_point()
+```
+
+```{r}
+price_fit = lm(price ~ stars + borough, data = nyc_airbnb)
+
+broom::tidy(price_fit)
+broom::glance(price_fit)
+```
+
+Now, Brooklyn is being compared to Manhattan, Bronx to Manhattan etc. This doesn't change model intrinsically, just changes what you see and how it works
