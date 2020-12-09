@@ -183,4 +183,120 @@ anova(fit_null, fit_alt) %>%
   broom::tidy()
 ```
 
-If do F-test first, and then do t-test after that then worry about multiple comparisons corrections being stats problem
+If do F-test first, and then do t-test after that then worry about multiple comparisons corrections being stats problem.
+
+## Nest data, fit models
+
+Instead of using one line, can you make separate regressions for categorical variables. 
+Can use interactions.
+Get slope on stars and interaction term on borough. 
+
+```{r}
+fit = lm(price ~ stars * borough + room_type * borough, data = nyc_airbnb)
+
+broom::tidy(fit)
+```
+
+Top output is reference group of Manhattan. Ref group of room_type is most common (entire apartment). Dif between private room and whole apartment is -124 for private room, and -154 for shared room. 
+
+To identify difference between private room in brooklyn: -124 + 32 is approx 90.
+
+Interactions: compare one fit that has interactions and one that doesn't have interactions to identify if adding variable to model is useful.
+
+Stars and other boroughs are not as significant as stars in ref group.
+
+This is more exploratory but easier to understand
+
+```{r}
+nyc_airbnb %>% 
+  nest(data = -borough)
+```
+
+Try to fit a model to each list column dataset (for each borough), using mutate and map
+
+```{r}
+nyc_airbnb %>% 
+  nest(data = -borough) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars, data = .x)),
+    results = map(models, broom::tidy)
+  )
+
+nyc_airbnb %>% 
+  nest(data = -borough) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(-data, -models) %>% 
+  unnest(results) %>% 
+  filter(term == "stars")
+```
+
+In Manhattan, significant association between stars and price. Bronx has no significant association between stars and price. Can't say anything about whether boroughs are significant in relation to each other.
+
+Now add room_type to model and clean up.
+
+```{r}
+nyc_airbnb %>% 
+  nest(data = -borough) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(-data, -models) %>% 
+  unnest(results) %>% 
+  filter(term != "(Intercept)") %>% 
+  select(borough, term, estimate) %>%
+  pivot_wider(
+    names_from = borough,
+    values_from = estimate
+  )
+```
+
+Shows what the effect of stars and roomtype is in each Borough. Going from entire apartment to private room saves $50 in Bronx and $120 in Manhattan. 
+
+Let's nest even more....
+fit linear model for each neighborhood in Manhattan.
+
+```{r}
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  nest(data = -neighborhood)
+
+## For each of the 32 neighborhoods in manhattan, fit a linear model of price as related to stars and room type.
+
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  nest(data = -neighborhood) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(-data, -models) %>% 
+  unnest(results)
+
+## Now look only at room_type
+
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  nest(data = -neighborhood) %>% 
+  mutate(
+    models = map(.x = data, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(-data, -models) %>% 
+  unnest(results) %>% 
+  filter(str_detect(term, "room_type")) %>% 
+  ggplot(aes(x = neighborhood, y = estimate)) + 
+  geom_point() + 
+  facet_wrap(. ~term) + 
+  theme(axis.text.x=element_text(angle=-70, hjust=1))
+```
+
+This is a way to fit a bunch of models, and look at coefficients 
+
+This Rmd: 
+* Take dataframe, fit model to it and look at results. 
+* For single model, how to do diagnostics and hypothesis test. 
+* Then, can do EDA by fitting of a bunch of models across a categorical variable and can look at coefficients to see what might be the same or different across dif categories (BUT THIS IS JUST EDA, not formal statistic testing of whether any of these models are good. Some may be heavily influenced by outliers and have non-normal distribution of residuals). 
