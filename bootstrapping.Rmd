@@ -1,0 +1,122 @@
+---
+title: "Bootstrapping"
+output: github_document
+---
+
+```{r setup_and_data_visualization_preferences}
+library(tidyverse)
+library(patchwork)
+library(stringr)
+library(p8105.datasets)
+library(mgcv)
+library(modelr)
+library(broom)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+set.seed(1)
+```
+
+## Simulate data
+
+```{r}
+n_samp = 250
+
+sim_df_const = 
+  tibble(
+    x = rnorm(n_samp, 1, 1),
+    error = rnorm(n_samp, 0, 1),
+    y = 2 + 3 * x + error
+  )
+
+sim_df_nonconst = 
+  sim_df_const %>% 
+  mutate(
+    error = error * 0.75 * x,
+    y = 2 + 3 * x + error
+  )
+```
+
+
+Plot datasets
+
+```{r}
+sim_df_const %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+sim_df_nonconst %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+Can see that the second line fits less well b/c error terms are not constant. The error terms in second model vary as a result of X (the predictor variable)
+
+Assumption for linear regression won't fit for sim_df_nonconst. Can still fit OLS regression, but its hard to know how wide confidence interval should be when look at these estimates.
+
+Fit LM for each of these as if OLS assumptions are true. 
+
+```{r}
+lm(y ~ x, data = sim_df_const) %>% broom::tidy()
+lm(y ~ x, data = sim_df_nonconst) %>% broom::tidy()
+```
+
+## Use bootstrap
+
+We know usual OLS assumptions aren't met in this dataset. So let's understand distribution of intercept and slope of repeated samples of datasets. Problem isn't the estimate, it's the confidence intervals.
+
+sample frac draws a sample from df, default is drawing sample as same size as original df.
+want sample to be same size b/c CI and variance estimates are very dependent on sample size. So need to keep sample size fixed in bootstrapping.
+
+Draw sample size with replacement so don't get exactly the same sample each time. Mimics collecting new data!
+
+```{r}
+boot_sample = function(df) {
+  
+  sample_frac(df, replace = TRUE) %>% 
+    arrange(x)
+  
+}
+```
+
+
+Check function
+
+```{r}
+boot_sample(sim_df_nonconst)
+```
+
+Each time you run function, get different sample. It'll draw some values from original sample multiple times, some none at all. Assumes original sample is sufficiently large to be representative of population. 
+
+```{r}
+boot_sample(sim_df_nonconst) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  ylim(-5, 16)
+```
+
+Line moves every time run it!
+
+Can we estimate slope and intercept and save across bootstrapped samples.
+
+```{r}
+boot_sample(sim_df_nonconst) %>% 
+  lm(y ~ x, data = .) %>% 
+  broom::tidy()
+```
+
+Every time we run this, will be slightly different.
